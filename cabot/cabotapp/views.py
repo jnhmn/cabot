@@ -28,7 +28,7 @@ from django.views.generic import (
 from django.shortcuts import redirect, render
 from alert import AlertPlugin, AlertPluginUserData
 from models import (
-    StatusCheck, GraphiteStatusCheck, JenkinsStatusCheck, HttpStatusCheck, ICMPStatusCheck,
+    StatusCheck, GraphiteStatusCheck, JenkinsStatusCheck, HttpStatusCheck, SmtpStatusCheck, ICMPStatusCheck,
     StatusCheckResult, UserProfile, Service, Instance, Shift, get_duty_officers)
 from tasks import run_status_check as _run_status_check
 from .graphite import get_data, get_matching_metrics
@@ -76,6 +76,12 @@ def duplicate_http_check(request, pk):
     pc = StatusCheck.objects.get(pk=pk)
     npk = pc.duplicate()
     return HttpResponseRedirect(reverse('update-http-check', kwargs={'pk': npk}))
+
+
+def duplicate_smtp_check(request, pk):
+    pc = StatusCheck.objects.get(pk=pk)
+    npk = pc.duplicate()
+    return HttpResponseRedirect(reverse('update-smtp-check', kwargs={'pk': npk}))
 
 
 def duplicate_graphite_check(request, pk):
@@ -241,6 +247,27 @@ class HttpStatusCheckForm(StatusCheckForm):
         if new_password_value == '':
             new_password_value = self.initial.get('password')
         return new_password_value
+
+
+class SmtpStatusCheckForm(StatusCheckForm):
+    class Meta:
+        model = SmtpStatusCheck
+        fields = (
+            'name',
+            'endpoint',
+            'timeout',
+            'frequency',
+            'importance',
+            'active',
+            'debounce',
+        )
+        widgets = dict(**base_widgets)
+        widgets.update({
+            'endpoint': forms.TextInput(attrs={
+                'style': 'width: 100%',
+                'placeholder': 'mail.arachnys.com',
+            }),
+        })
 
 
 class JenkinsStatusCheckForm(StatusCheckForm):
@@ -478,6 +505,16 @@ class HttpCheckCreateView(CheckCreateView):
 class HttpCheckUpdateView(CheckUpdateView):
     model = HttpStatusCheck
     form_class = HttpStatusCheckForm
+
+
+class SmtpCheckCreateView(CheckCreateView):
+    model = SmtpStatusCheck
+    form_class = SmtpStatusCheckForm
+
+
+class SmtpCheckUpdateView(CheckUpdateView):
+    model = SmtpStatusCheck
+    form_class = SmtpStatusCheckForm
 
 
 class JenkinsCheckCreateView(CheckCreateView):

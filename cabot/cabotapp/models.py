@@ -4,6 +4,9 @@ import re
 import subprocess
 import time
 from datetime import timedelta
+from smtplib import SMTP
+from socket import error as socket_error
+from socket import timeout as socket_timeout
 
 import requests
 from celery.exceptions import SoftTimeLimitExceeded
@@ -238,6 +241,9 @@ class CheckGroupMixin(models.Model):
     def http_status_checks(self):
         return self.status_checks.filter(polymorphic_ctype__model='httpstatuscheck')
 
+    def smtp_status_checks(self):
+        return self.status_checks.filter(polymorphic_ctype__model='smtpstatuscheck')
+
     def jenkins_status_checks(self):
         return self.status_checks.filter(polymorphic_ctype__model='jenkinsstatuscheck')
 
@@ -246,6 +252,9 @@ class CheckGroupMixin(models.Model):
 
     def active_http_status_checks(self):
         return self.http_status_checks().filter(active=True)
+
+    def active_smtp_status_checks(self):
+        return self.smtp_status_checks().filter(active=True)
 
     def active_jenkins_status_checks(self):
         return self.jenkins_status_checks().filter(active=True)
@@ -762,6 +771,38 @@ class HttpStatusCheck(StatusCheck):
             else:
                 result.succeeded = True
         return result
+
+
+class SmtpStatusCheck(StatusCheck):
+    class Meta(StatusCheck.Meta):
+        proxy = True
+
+    @property
+    def check_category(self):
+        return "SMTP check"
+
+    def _run(self):
+        result = StatusCheckResult(status_check=self)
+
+        try:
+            smtp = SMTP(timeout=self.timeout)
+            smtp.connect(self.endpoint)
+            resp = smtp.helo("cabbot")
+            smtp.quit()
+            if resp[0] != 250:
+                result.error = u'Wrong SMTP status code: got %s (expected 250)' %(resp[0])
+                result.raw_data = resp[1]
+                result.succeeded = False
+            else:
+                result.succeeded = True
+        except socket_timeout as e:
+            result.error = u'Connection timed out'
+            result.succeeded = False
+        except socket_error as e:
+            result.error = u'Error establishing the connection: %s' (e.strerror)
+            result.succeeded = False
+        return result
+
 
 
 class JenkinsStatusCheck(StatusCheck):

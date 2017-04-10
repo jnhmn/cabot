@@ -101,6 +101,10 @@
 
 <hr>
 
+{% include 'cabotapp/_statuscheck_list.html' with checks=service.smtp_status_checks.all service=service checks_type="Smtp" %}
+
+<hr>
+
 {% include 'cabotapp/_statuscheck_list.html' with checks=service.jenkins_status_checks.all service=service checks_type="Jenkins" %}
 
 <hr>

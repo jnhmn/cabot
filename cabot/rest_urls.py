@@ -108,6 +108,14 @@ router.register(r'http_checks', create_viewset(
     ),
 ))
 
+router.register(r'smtp_checks', create_viewset(
+    arg_model=models.SmtpStatusCheck,
+    arg_fields=status_check_fields + (
+        'endpoint',
+        'timeout',
+    ),
+))
+
 router.register(r'jenkins_checks', create_viewset(
     arg_model=models.JenkinsStatusCheck,
     arg_fields=status_check_fields + (
