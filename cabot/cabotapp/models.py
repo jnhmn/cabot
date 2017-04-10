@@ -799,7 +799,7 @@ class SmtpStatusCheck(StatusCheck):
             result.error = u'Connection timed out'
             result.succeeded = False
         except socket_error as e:
-            result.error = u'Error establishing the connection: %s' (e.strerror)
+            result.error = u'Error establishing the connection: %s' %(e.strerror)
             result.succeeded = False
         return result
 
