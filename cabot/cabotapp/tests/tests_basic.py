@@ -11,7 +11,7 @@ from cabot.cabotapp.graphite import parse_metric
 from cabot.cabotapp.alert import update_alert_plugins, AlertPlugin
 from cabot.cabotapp.models import (
     GraphiteStatusCheck, JenkinsStatusCheck,
-    HttpStatusCheck, ICMPStatusCheck, Service, Instance,
+    HttpStatusCheck, SmtpStatusCheck, ICMPStatusCheck, Service, Instance,
     StatusCheckResult, minimize_targets, ServiceStatusSnapshot)
 from cabot.cabotapp.calendar import get_events
 from cabot.cabotapp.views import StatusCheckReportForm
@@ -62,6 +62,7 @@ class LocalTestCase(APITestCase):
             Permission.objects.get(codename='add_instance'),
             Permission.objects.get(codename='add_service'),
             Permission.objects.get(codename='add_httpstatuscheck'),
+            Permission.objects.get(codename='add_smtpstatuscheck'),
             Permission.objects.get(codename='add_graphitestatuscheck'),
             Permission.objects.get(codename='add_jenkinsstatuscheck'),
             Permission.objects.get(codename='add_icmpstatuscheck'),
@@ -90,6 +91,13 @@ class LocalTestCase(APITestCase):
             status_code='200',
             text_match=None,
         )
+        self.smtp_check = SmtpStatusCheck.objects.create(
+            name='Smtp Check',
+            created_by=self.user,
+            importance=Service.CRITICAL_STATUS,
+            endpoint='mail.arachnys.com',
+            timeout=10
+        )
         self.service = Service.objects.create(
             name='Service',
         )
@@ -100,7 +108,7 @@ class LocalTestCase(APITestCase):
         )
 
         self.service.status_checks.add(
-            self.graphite_check, self.jenkins_check, self.http_check)
+            self.graphite_check, self.jenkins_check, self.http_check, self.smtp_check)
         # failing is second most recent
         self.older_result = StatusCheckResult(
             status_check=self.graphite_check,
@@ -177,6 +185,29 @@ def fake_http_404_response(*args, **kwargs):
     return resp
 
 
+class dummySMTP(object):
+    def __init__ (self, address, timeout):
+        self.address = address
+        self.timeout = timeout
+        global smtp
+        smtp = self
+    def connect (self, endpoint):
+        self.address = endpoint
+        return (220, '***********************************************************')
+    def helo (self, host):
+        self.heloHost = host
+        return (250, self.address )
+    def quit (self):
+        return (221, '2.0.0 Bye')
+
+
+def fake_smtp_451_response(*args, **kwargs):
+    resp = Mock()
+    resp.content = get_content('http_response.html')
+    resp.status_code = 404
+    return resp
+
+
 def fake_gcal_response(*args, **kwargs):
     resp = Mock()
     resp.content = get_content('gcal_response.ics')
@@ -224,6 +255,8 @@ class TestCheckRun(LocalTestCase):
         self.assertEqual(self.jenkins_check.calculated_status,
                          Service.CALCULATED_PASSING_STATUS)
         self.assertEqual(self.http_check.calculated_status,
+                         Service.CALCULATED_PASSING_STATUS)
+        self.assertEqual(self.smtp_check.calculated_status,
                          Service.CALCULATED_PASSING_STATUS)
         self.service.update_status()
         self.assertEqual(self.service.overall_status, Service.PASSING_STATUS)
@@ -455,6 +488,18 @@ class TestCheckRun(LocalTestCase):
                          Service.CALCULATED_FAILING_STATUS)
 
 
+    @patch('cabot.cabotapp.models.SMTP', dummySMTP)
+    def test_smtp_run(self):
+        checkresults = self.smtp_check.statuscheckresult_set.all()
+        self.assertEqual(len(checkresults), 0)
+        self.smtp_check.run()
+        checkresults = self.smtp_check.statuscheckresult_set.all()
+        self.assertEqual(len(checkresults), 1)
+        self.assertTrue(self.smtp_check.last_result().succeeded)
+        self.assertEqual(self.smtp_check.calculated_status,
+                         Service.CALCULATED_PASSING_STATUS)
+        self.assertEqual(1, 1)
+
 class TestInstances(LocalTestCase):
 
     def test_duplicate_instance(self):
@@ -631,7 +676,8 @@ class TestAPI(LocalTestCase):
                     'status_checks': [
                         self.graphite_check.id,
                         self.jenkins_check.id,
-                        self.http_check.id
+                        self.http_check.id,
+                        self.smtp_check.id
                     ],
                     'alerts': [self.alert_plugin.id],
                     'hackpad_id': None,
@@ -683,6 +729,15 @@ class TestAPI(LocalTestCase):
                     'calculated_status': u'passing',
                 },
                 {
+                    'name': u'Smtp Check',
+                    'active': True,
+                    'importance': u'CRITICAL',
+                    'frequency': 5,
+                    'debounce': 0,
+                    'id': self.smtp_check.id,
+                    'calculated_status': u'passing',
+                },
+                {
                     'name': u'Hello check',
                     'active': True,
                     'importance': u'ERROR',
@@ -723,6 +778,19 @@ class TestAPI(LocalTestCase):
                     'timeout': 10,
                     'verify_ssl_certificate': True,
                     'id': self.http_check.id,
+                    'calculated_status': u'passing',
+                },
+            ],
+            'smtpstatuscheck': [
+                {
+                    'name': u'Smtp Check',
+                    'active': True,
+                    'importance': u'CRITICAL',
+                    'frequency': 5,
+                    'debounce': 0,
+                    'endpoint': u'mail.arachnys.com',
+                    'timeout': 10,
+                    'id': self.smtp_check.id,
                     'calculated_status': u'passing',
                 },
             ],
@@ -809,6 +877,19 @@ class TestAPI(LocalTestCase):
                     'timeout': 30,
                     'verify_ssl_certificate': True,
                     'id': self.http_check.id,
+                    'calculated_status': u'passing',
+                },
+            ],
+            'smtpstatuscheck': [
+                {
+                    'name': u'posted smtp check',
+                    'active': True,
+                    'importance': u'ERROR',
+                    'frequency': 5,
+                    'debounce': 0,
+                    'endpoint': u'mail.example.com',
+                    'timeout': 30,
+                    'id': self.smtp_check.id,
                     'calculated_status': u'passing',
                 },
             ],
